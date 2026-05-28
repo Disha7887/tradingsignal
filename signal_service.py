@@ -400,6 +400,18 @@ def htf_trend_sign(exchange_id: str, symbol: str, timeframe: str) -> int:
 app = FastAPI(title="Phase 1 Signal Service", version="1.0")
 
 
+
+@app.get("/")
+def root():
+    return {
+        "service": "Phase 1 Signal Service",
+        "status": "running",
+        "endpoints": {
+            "health": "/health",
+            "signal": "/signal?symbol=BTC/USDT&timeframe=1h&exchange=binance"
+        }
+    }
+
 @app.get("/health")
 def health():
     return {"status": "ok", "time": dt.datetime.now(dt.timezone.utc).isoformat()}
