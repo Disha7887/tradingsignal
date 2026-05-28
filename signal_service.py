@@ -369,7 +369,7 @@ def fetch_funding(symbol: str) -> Optional[float]:
     try:
         base, quote = symbol.split("/")
         perp = f"{base}/{quote}:{quote}"
-        ex = ccxt.binanceusdm({"enableRateLimit": True})
+        ex = ccxt.bybit({"enableRateLimit": True})
         return float(ex.fetch_funding_rate(perp)["fundingRate"])
     except Exception:
         return None
@@ -421,7 +421,7 @@ def health():
 def signal(
     symbol: str = Query("BTC/USDT"),
     timeframe: str = Query("1h"),
-    exchange: str = Query("binance"),
+    exchange: str = Query("bybit"),
 ):
     try:
         df = fetch_ohlcv(exchange, symbol, timeframe, CONFIG["ohlcv_limit"])
