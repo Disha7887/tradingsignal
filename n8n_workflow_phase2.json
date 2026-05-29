@@ -1,0 +1,110 @@
+{
+  "name": "Phase 2 — Signal + Resolve",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [{"field":"cronExpression","expression":"1 * * * *"}] } },
+      "id": "cron-signal", "name": "Every hour — signal",
+      "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [240, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://YOUR_RAILWAY_URL/signal",
+        "sendQuery": true,
+        "queryParameters": {"parameters": [
+          {"name":"symbol",    "value":"BTC/USDT"},
+          {"name":"timeframe", "value":"1h"},
+          {"name":"exchange",  "value":"BINANCE"}
+        ]},
+        "options": {"timeout": 40000}
+      },
+      "id": "get-signal", "name": "Get signal (auto-logs to DB)",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [480, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {"leftValue":"={{ $json.direction }}","rightValue":"NEUTRAL","operator":{"type":"string","operation":"notEquals"}},
+            {"leftValue":"={{ $json.confidence }}","rightValue":40,"operator":{"type":"number","operation":"gte"}}
+          ]
+        }
+      },
+      "id": "if-tradeable", "name": "Tradeable? (not NEUTRAL + conf ≥ 40)",
+      "type": "n8n-nodes-base.if", "typeVersion": 2, "position": [720, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $input.first().json;\nconst arrow = s.direction==='LONG' ? '↑' : '↓';\nconst p = x => x ?? '—';\nconst reasons = (s.rationale||[]).map(r=>'  • '+r).join('\\n');\nconst c = s.context||{};\nreturn [{ json: { message: [\n  `📊 SIGNAL  ${s.symbol}  ${s.timeframe}`,\n  `${arrow} ${s.direction}   ${s.confidence}% confidence`,\n  `Regime: ${s.regime}`,\n  ``,\n  `Entry:  ${p(s.entry)}`,\n  `Stop:   ${p(s.stop)}`,\n  `Target: ${p(s.target)}   R:R ${p(s.reward_risk)}`,\n  ``,\n  `Why:`,\n  reasons,\n  ``,\n  `ADX ${p(c.adx)} | RSI ${p(c.rsi)} | F&G ${p(c.fear_greed)} (${p(c.fear_greed_label)})`,\n  `HTF: ${p(c.htf_trend)}  |  ID: ${p(s.log_id||'').slice(0,8)}`,\n  ``,\n  `⚠️ Decision-support only.`\n].join('\\n') }}];"
+      },
+      "id": "format-alert", "name": "Format Telegram alert",
+      "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [960, 120]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "id": "telegram", "name": "Send to Telegram",
+      "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [1200, 120],
+      "credentials": {"telegramApi": {"id": "REPLACE_WITH_CREDENTIAL_ID","name":"Telegram account"}}
+    },
+
+    {
+      "parameters": { "rule": { "interval": [{"field":"cronExpression","expression":"30 * * * *"}] } },
+      "id": "cron-resolve", "name": "Every hour — resolve outcomes",
+      "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [240, 420]
+    },
+    {
+      "parameters": {
+        "url": "https://YOUR_RAILWAY_URL/resolve",
+        "sendQuery": true,
+        "queryParameters": {"parameters": [{"name":"limit","value":"30"}]},
+        "options": {"timeout": 60000}
+      },
+      "id": "resolve", "name": "Resolve outcomes",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [480, 420]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {"leftValue":"={{ $json.resolved_count }}","rightValue":0,"operator":{"type":"number","operation":"gt"}}
+          ]
+        }
+      },
+      "id": "if-resolved", "name": "Any resolved?",
+      "type": "n8n-nodes-base.if", "typeVersion": 2, "position": [720, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst lines = (r.results||[]).filter(x=>['WIN','LOSS','EXPIRED'].includes(x.outcome)).map(x=>`${x.outcome==='WIN'?'✅':'❌'} ${x.symbol} ${x.direction} → ${x.outcome}  PnL: ${x.pnl_pct??'—'}%  (${x.bars} bars)`);\nif(!lines.length) return [{json:{message:null}}];\nreturn [{json:{message:`📋 Outcomes resolved (${r.resolved_count}):\\n`+lines.join('\\n')}}];"
+      },
+      "id": "format-resolved", "name": "Format resolved summary",
+      "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [960, 340]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "id": "telegram-resolved", "name": "Send resolved to Telegram",
+      "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [1200, 340],
+      "credentials": {"telegramApi": {"id": "REPLACE_WITH_CREDENTIAL_ID","name":"Telegram account"}}
+    }
+  ],
+  "connections": {
+    "Every hour — signal":        {"main":[[{"node":"Get signal (auto-logs to DB)","type":"main","index":0}]]},
+    "Get signal (auto-logs to DB)":{"main":[[{"node":"Tradeable? (not NEUTRAL + conf ≥ 40)","type":"main","index":0}]]},
+    "Tradeable? (not NEUTRAL + conf ≥ 40)":{"main":[[{"node":"Format Telegram alert","type":"main","index":0}],[]]},
+    "Format Telegram alert":       {"main":[[{"node":"Send to Telegram","type":"main","index":0}]]},
+    "Every hour — resolve outcomes":{"main":[[{"node":"Resolve outcomes","type":"main","index":0}]]},
+    "Resolve outcomes":            {"main":[[{"node":"Any resolved?","type":"main","index":0}]]},
+    "Any resolved?":               {"main":[[{"node":"Format resolved summary","type":"main","index":0}],[]]},
+    "Format resolved summary":     {"main":[[{"node":"Send resolved to Telegram","type":"main","index":0}]]}
+  }
+}
